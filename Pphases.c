@@ -98,8 +98,7 @@ int main(int argc, char **argv)
 	int aux[pTochange];				/* If rank !=0 or < proc_n, two space are availaible to set flag control. This is 
 									 used for know, if im ordenated with my left and right neighbor. Use (my_rank+(my_rank - 1))
 									 to left neighbor or (my_rank + my_rank to right neighbor) */
-	int bcast;						// using for bcast
-
+	
 	left = (my_rank !=0) ? my_rank -1;
 	right = (my_rank < proc_n - 1) ? my_rank + 1;
 	unsigned char vet_ctrl[(proc_n * 2)-2]; // Control vector 
@@ -143,70 +142,49 @@ int main(int argc, char **argv)
 			printf("%d ", vetor[i]);
 		printf("\n\n");
 		#endif
-
-				// ## 2. TESTE DE CONDICAO DE PARADA ##
-
+	
 		// se nao for Ultimo, envio maior valor pra Direita   O -> O
 		if (my_rank != proc_n - 1)
 		{
-			MPI_Send(&vetor[psize], 1, MPI_INT, right, RIGHT, MPI_COMM_WORLD);
+			MPI_Send(&vetor[psize], 1, MPI_INT, right, TAG, MPI_COMM_WORLD);		
+		}
+		if (my_rank == 1)
+		{
+			MPI_Send(&vetor[0], psize/4, MPI_INT, left, TAG, MPI_COMM_WORLD);
 		}
 		// se nao for Primeiro, recebo maior valor da Esquerda
-		if (my_rank != 0) 
+		if (my_rank != 0)
 		{
-			MPI_Recv(&vetor[psize+1], 1, MPI_INT, left, TAG, MPI_COMM_WORLD, &status);
+			MPI_Recv(vetor[psize+1], 1, MPI_INT, left, TAG, MPI_COMM_WORLD, &status);
 			// se o Maior recebido, for menor que meu Menor, OK
-			if (vetor[psize+1] < vetor[0])
+			if (vetor[0] < vetor[psize+1])
 			{
-				if(my_rank !=0 & my_rank)
-				{
-					vet_ctrl[my_rank + (my_rank - 1)] = 1;
-						if(my_rank < proc_n - 1)
-						vet_ctrl[my_rank+ my_rank] = 1;		
-				}
-				else
-				{
-					vet_ctrl[my_rank+ (my_rank - 1)] = 1;	
-					if(my_rank < proc_n - 1)
-						vet_ctrl[my_rank+ my_rank] = 1;			
-				}
-			}	
+				vet_ctrl[my_rank] = 1;
+			}
 			else
 			{
-				if(my_rank !=0)
-				{
-					vet_ctrl[my_rank+ (my_rank - 1)] = 0;
-					if(my_rank < proc_n - 1)
-						vet_ctrl[my_rank+ my_rank] = 1;				
-				}
-				else
-				{
-					vet_ctrl[my_rank+ (my_rank - 1)] = 0;	
-					if(my_rank < proc_n - 1)
-						vet_ctrl[my_rank+ my_rank] = 1;		
-				}
+				vet_ctrl[my_rank] = 0;
 			}
 		}
-		if (my_rank != 0)
-	
-		// BROADCAST of control vector
-		if(my_rank != 0)
-			bcast = vet_ctrl[my_rank + (my_rank - 1)];
-		else 
-			bcast = vet_ctrl[0];
+		else
+		{
+			MPI_Recv(vetor[psize+1], 1, MPI_INT, right, TAG, MPI_COMM_WORLD, &status);	
+			if (vetor[0] < vetor[psize+1])
+			{
+				vet_ctrl[my_rank] = 1;
+			}
+			else
+			{
+				vet_ctrl[my_rank] = 0;
+			}
+		}
 		
-		MPI_Barrier(MPI_COMM_WORLD);
+		// BROADCAST
 		for (i = 0; i < proc_n; i++)
 		{
-				MPI_Bcast(&vet_ctrl[my_rank + my_rank], 1, MPI_UNSIGNED_CHAR, i, MPI_COMM_WORLD);
-				MPI_Bcast(&vet_ctrl[my_rank + my_rank], 1, MPI_UNSIGNED_CHAR, i, MPI_COMM_WORLD);
+			MPI_Bcast(&vet_ctrl[i], 1, MPI_UNSIGNED_CHAR, i, MPI_COMM_WORLD);
 		}
-		MPI_Barrier(MPI_COMM_WORLD); // Wait all processes to syncronise the vet_crtl
-		
-		if((my_rank < proc_n - 1) & (my_rank != 0))
-			 vet_ctrl[my_rank + my_rank] = bcast;
-		else 
-			 vet_ctrl[my_rank + my_rank] = bcast;
+		MPI_Barrier(MPI_COMM_WORLD);
 		// Stop condition, verify if all neighbors are ordenate
 		k = 0;
 		for (i = 0; i < (proc_n*2)-2; i++)
