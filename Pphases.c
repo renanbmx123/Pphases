@@ -132,12 +132,11 @@ int main(int argc, char **argv)
 	#endif 
 	
 	MPI_Barrier(MPI_COMM_WORLD);	// Aguarda todos os processos chegarem ate aqui
+	// 1. First we ordenate our local vector at the first time.
+	bs(psize, vetor);
 	
 	while(!end) {
     
-		// 1. First we ordenate our local  vector
-		bs(psize, vetor);
-
 		#ifdef DEBUG
 		printf("[%d]Vetor: ", my_rank);
 		for (i = 0; i < psize; i++)
@@ -205,6 +204,12 @@ int main(int argc, char **argv)
 		}
 		
 		// ## 3. TROCA PARA CONVERGENCIA ##
+		/*
+			TODO: Usar o vetor de controle para verificar se ja estou ordenado com meu vizinho
+			senão, recebo a parcela de troca e faço a ordenação com a parcela e envio a sobra, que vai estar na minha parcela.
+			Neste caso, a ordenação é entrão realizada neste passo, então não precisamos faze-la no inicio do loop, somente a
+			primeira vez antes de entras no loop!!!
+		*/
 		
 		// se nao for Primeiro, envio meu menor valor pra Esquerda  O <- O
         if (my_rank != 0) 
