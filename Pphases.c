@@ -95,12 +95,14 @@ int main(int argc, char **argv)
     int psize = VET_SIZE/proc_n;	// tamanho do vetor do processo
 	int pTochange = psize/25;		// Size to change date with others
 	int left ,right;				// Auxiliar vector for change operation
-	int aux[pTochange];				/* If rank !=0 or < proc_n, two space are availaible to set flag control. This is 
-									 used for know, if im ordenated with my left and right neighbor. Use (my_rank+(my_rank - 1))
-									 to left neighbor or (my_rank + my_rank to right neighbor) */
 	
-	left = (my_rank !=0) ? my_rank -1;
-	right = (my_rank < proc_n - 1) ? my_rank + 1;
+	/* If rank !=0 or < proc_n, two space are availaible to set flag control. This is 
+	 used for know, if im ordenated with my left and right neighbor. Use (my_rank+(my_rank - 1))
+	 to left neighbor or (my_rank + my_rank to right neighbor) */
+	//int aux[pTochange];				
+	
+	left = (my_rank !=0) ? my_rank -1:0 ;
+	right = (my_rank < proc_n - 1) ? my_rank + 1: proc_n - 1;
 	unsigned char vet_ctrl[(proc_n * 2)-2]; // Control vector 
 	
     int *vetor = (int *)malloc( (psize + pTochange) * sizeof(int)); // Data vector with extra size
@@ -150,12 +152,12 @@ int main(int argc, char **argv)
 		}
 		if (my_rank == 1)
 		{
-			MPI_Send(&vetor[0], psize/4, MPI_INT, left, TAG, MPI_COMM_WORLD);
+			MPI_Send(&vetor[0], 1, MPI_INT, left, TAG, MPI_COMM_WORLD);
 		}
 		// se nao for Primeiro, recebo maior valor da Esquerda
 		if (my_rank != 0)
 		{
-			MPI_Recv(vetor[psize+1], 1, MPI_INT, left, TAG, MPI_COMM_WORLD, &status);
+			MPI_Recv(&vetor[psize+1], 1, MPI_INT, left, TAG, MPI_COMM_WORLD, &status);
 			// se o Maior recebido, for menor que meu Menor, OK
 			if (vetor[0] < vetor[psize+1])
 			{
@@ -168,8 +170,8 @@ int main(int argc, char **argv)
 		}
 		else
 		{
-			MPI_Recv(vetor[psize+1], 1, MPI_INT, right, TAG, MPI_COMM_WORLD, &status);	
-			if (vetor[0] < vetor[psize+1])
+			MPI_Recv(&vetor[psize+1], 1, MPI_INT, right, TAG, MPI_COMM_WORLD, &status);	
+			if (vetor[psize] > vetor[psize+1])
 			{
 				vet_ctrl[my_rank] = 1;
 			}
@@ -185,6 +187,7 @@ int main(int argc, char **argv)
 			MPI_Bcast(&vet_ctrl[i], 1, MPI_UNSIGNED_CHAR, i, MPI_COMM_WORLD);
 		}
 		MPI_Barrier(MPI_COMM_WORLD);
+		
 		// Stop condition, verify if all neighbors are ordenate
 		k = 0;
 		for (i = 0; i < (proc_n*2)-2; i++)
@@ -194,7 +197,7 @@ int main(int argc, char **argv)
 				k++;
 			}
 		}
-		
+
 		if (k == proc_n)
 		{
 			end = 1;
@@ -204,41 +207,23 @@ int main(int argc, char **argv)
 		// ## 3. TROCA PARA CONVERGENCIA ##
 		
 		// se nao for Primeiro, envio meu menor valor pra Esquerda  O <- O
-
         if (my_rank != 0) 
 		{
-            MPI_Send(&vetor[0], pTochange, MPI_INT, left, LEFT, MPI_COMM_WORLD); // send to left
-		/*	MPI_Probe(left, MPI_ANY_TAG, MPI_COMM_WORLD, &status)
-			if (status.MPI_TAG == CHANGE)
-			{
-				memcpy(aux,vetor[psize+1])
-				MPI_Recv(&vetor[psize+1], pTochange, MPI_INT, right, CHANGE, MPI_COMM_WORLD, &status);
-			}*/
-        }
+			if(vet_ctrl[my_rank] != 1 ) //Verify with the vet_ctrl if i was ordenate with my left neighbor, if not send to exchange.
+				MPI_Send(&vetor[0], pTochange, MPI_INT, left, LEFT, MPI_COMM_WORLD); // send to left
+		}
 		if(my_rank != proc_n -1){
 			// Recieve from left
-			MPI_Recv(&vetor[psize+1], pTochange, MPI_INT, right, RIGHT, MPI_COMM_WORLD, &status); 
+			if(vet_ctrl[right] != 1 ){
+				MPI_Recv(&vetor[psize+1], pTochange, MPI_INT, right, RIGHT, MPI_COMM_WORLD, &status); 
+				bs((psize+pTochange),vetor);
+			}
 		}
+		MPI_Send(&vetor[psize - pTochange], pTochange, MPI_INT, right, CHANGE, MPI_COMM_WORLD);
 		
-		// if the first element of right is less than the greater of left, then change it.
-		if(vetor[psize+1] < vetor[psize]) 
-		{
-				MPI_Send(&vetor[psize - pTochange], pTochange, MPI_INT, right, CHANGE, MPI_COMM_WORLD);
-				memmove(&vetor[psize - pTochange], vetor[psize+1], pTochange*sizeof(int));
-		}
-		else // if not the case, then "send back the data" 
-		{
-			MPI_Send(0,0,MPI_INT,right,0,MPI_COMM_WORLD);
-		}
+		MPI_Barrier(MPI_COMM_WORLD); //To synchronize all processes at this point
+
 		
-		// Verify with MPI_Probe if my left neighbor is send a vector to change
-		MPI_Probe(left, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-		if (status.MPI_TAG == CHANGE)
-		{
-			MPI_Recv(&vetor[psize - pTochange], pTochange, MPI_INT, right, CHANGE, MPI_COMM_WORLD, &status); 
-		}
-
-
 
 	}
 	// FINALIZA CODIGO
