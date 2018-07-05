@@ -119,19 +119,6 @@ int main(int argc, char **argv)
 	printf("\n\n");	
 	#endif 
 	
-	MPI_Barrier(MPI_COMM_WORLD);	// Aguarda todos os processos chegarem ate aqui
-
-	#ifdef DEBUG
-	if(my_rank == 0) {
-		printf("[%d]Ctrl: ", my_rank);
-		for (i = 0; i < proc_n; i++)
-			printf("%d ", vet_ctrl[i]);
-		printf("\n\n");
-		printf("=======================================\n\n"); 
-	}
-	#endif 
-	
-	MPI_Barrier(MPI_COMM_WORLD);	// Aguarda todos os processos chegarem ate aqui
 	// 1. First we ordenate our local vector at the first time.
 	bs(psize, vetor);
 	
@@ -185,8 +172,18 @@ int main(int argc, char **argv)
 		{
 			MPI_Bcast(&vet_ctrl[i], 1, MPI_UNSIGNED_CHAR, i, MPI_COMM_WORLD);
 		}
-		MPI_Barrier(MPI_COMM_WORLD);
 		
+		#ifdef DEBUG
+		printf("ID: %d ",my_rank);
+		for (i = 0; i < proc_n; i++)
+		{
+			printf("Vet:%d ",vet_ctrl[i]);
+		}
+		printf("\n");
+		#endif
+
+		MPI_Barrier(MPI_COMM_WORLD);
+			
 		// Stop condition, verify if all neighbors are ordenate
 		k = 0;
 		for (i = 0; i < (proc_n*2)-2; i++)
@@ -212,24 +209,47 @@ int main(int argc, char **argv)
 		*/
 		
 		// se nao for Primeiro, envio meu menor valor pra Esquerda  O <- O
+		
         if (my_rank != 0) 
 		{
-			if(vet_ctrl[my_rank] != 1 ) //Verify with the vet_ctrl if i was ordenate with my left neighbor, if not send to exchange.
+			if(vet_ctrl[my_rank] == 0 ) //Verify with the vet_ctrl if i was ordenate with my left neighbor, if not send to exchange.
+			{
+				/* first, send my portion, and wait to recive from neightbor if im no the least process*/
+
 				MPI_Send(&vetor[0], pTochange, MPI_INT, left, LEFT, MPI_COMM_WORLD); // send to left
-		}
-		if(my_rank != proc_n -1){
-			// Recieve from left
-			if(vet_ctrl[right] != 1 ){
-				MPI_Recv(&vetor[psize+1], pTochange, MPI_INT, right, RIGHT, MPI_COMM_WORLD, &status); 
-				bs((psize+pTochange),vetor);
+				// Im not the last process, than i wait to recive from right with is send from left.
+				if(my_rank != proc_n -1){
+					// Wait for right to send
+					MPI_Recv(&vetor[psize+1], pTochange, MPI_INT, right, LEFT, MPI_COMM_WORLD, &status); 
+					// Ordenate all vector, include the portion we recive
+					bs((psize+pTochange),vetor);
+					// Send back my portion
+					MPI_Send(&vetor[psize+1], pTochange, MPI_INT, left, LEFT, MPI_COMM_WORLD);
+				}
+				
 			}
 		}
-		MPI_Send(&vetor[psize - pTochange], pTochange, MPI_INT, right, CHANGE, MPI_COMM_WORLD);
+		else
+		{
+			MPI_Recv(&vetor[psize+1], pTochange, MPI_INT, right, LEFT, MPI_COMM_WORLD, &status);
+		}
 		
-		MPI_Barrier(MPI_COMM_WORLD); //To synchronize all processes at this point
 
+		/*if(my_rank < proc_n -1){
+			
+			// Recieve from left
+			if(vet_ctrl[right] == 0 ){
+				printf("%d Recebi\n",my_rank);
+				MPI_Recv(&vetor[psize+1], pTochange, MPI_INT, right, RIGHT, MPI_COMM_WORLD, &status); 
+				bs((psize+pTochange),vetor);
+				MPI_Send(&vetor[psize+1], pTochange, MPI_INT, left, LEFT, MPI_COMM_WORLD);
+			}
+		}*/
 		
+		printf("fim loop\n");
 
+		//MPI_Send(&vetor[psize - pTochange], pTochange, MPI_INT, right, CHANGE, MPI_COMM_WORLD);
+		
 	}
 	// FINALIZA CODIGO
 
