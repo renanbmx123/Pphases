@@ -20,7 +20,7 @@
 #include <stdlib.h> //malloc atoi
 #include <string.h> //memcpy
 
-#define VET_SIZE  1000 // Trabalho Final com o valores 100.000 e 1.000.000
+#define VET_SIZE  100 // Trabalho Final com o valores 100.000 e 1.000.000
 
 #define DEBUG1 1
 #define LEFT 2
@@ -87,7 +87,7 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &proc_n);
 
-    t1 = MPI_Wtime();
+    t1 = (my_rank == 0)? MPI_Wtime(): 0;
 
 	#define LAST (proc_n - 1)		// Last process
     int i;							// for counters
@@ -125,19 +125,40 @@ int main(int argc, char **argv)
 		printf("%d ", vetor[i]);
 	printf("\n\n");	
 	#endif 
-
+ 
 	while(!end) {
     	
-		// se nao for Ultimo, envio maior valor pra Direita   O -> O
+		//******************************
+		//#1 Verifife order of elementes.
+		//******************************
+		
+		// Send to the right, if im not the last process.
 		if (my_rank != LAST)
 		{
 			MPI_Send(&vetor[psize-1], 1, MPI_INT, right, RIGHT, MPI_COMM_WORLD);		
 		}
+		// Exeption case
 		if (my_rank == 1)
 		{
 			MPI_Send(&vetor[0], 1, MPI_INT, left, LEFT, MPI_COMM_WORLD);
 		}
-		// se nao for Primeiro, recebo maior valor da Esquerda
+
+		// Exception case
+		if (my_rank == 0)
+		{
+			MPI_Recv(&vetor[psize], 1, MPI_INT, right, LEFT, MPI_COMM_WORLD, &status);
+			if(vetor[psize] > vetor[psize-1] )
+			{
+				//printf("[0] = %d <- [1] = %d \n",vetor[psize-1],vetor[psize]);
+				vet_ctrl[my_rank] = 1;
+			}else
+			{
+				//printf("[0] = %d <- [1] = %d \n",vetor[psize-1],vetor[psize]);
+				vet_ctrl[my_rank] = 0;
+			}
+		}
+
+		// Recieve from left if im not 0 process.
 		if (my_rank != 0)
 		{
 			MPI_Recv(&vetor[psize], 1, MPI_INT, left, RIGHT, MPI_COMM_WORLD, &status);
@@ -152,38 +173,17 @@ int main(int argc, char **argv)
 				vet_ctrl[my_rank] = 0;
 			}
 		}
-		if (my_rank == 0)
-		{
-			MPI_Recv(&vetor[psize], 1, MPI_INT, 1, LEFT, MPI_COMM_WORLD, &status);	
-			if (vetor[psize-1] > vetor[psize])
-			{
-				vet_ctrl[my_rank] = 1;
-			}
-			else
-			{
-				vet_ctrl[my_rank] = 0;
-			}
-		}
 
+		//******************************
+		//#2. Bcast status of ordenation
+		//******************************
 
-		
-		// BROADCAST
 		for (i = 0; i < proc_n; i++)
 		{
 			MPI_Bcast(&vet_ctrl[i], 1, MPI_UNSIGNED_CHAR, i, MPI_COMM_WORLD);
 		}
-		
-		#ifdef DEBUG
-		printf("ID: %d ",my_rank);
-		for (i = 0; i < proc_n; i++)
-		{
-			printf("Vet:%d ",vet_ctrl[i]);
-		}
-		printf("\n");
-		#endif
-
 		MPI_Barrier(MPI_COMM_WORLD);
-			
+		
 		// Stop condition, verify if all neighbors are ordenate
 		k = 0;
 		for (i = 0; i < (proc_n*2)-2; i++)
@@ -199,65 +199,53 @@ int main(int argc, char **argv)
 			end = 1;
 			break;
 		}
-		
-		// ## 3. TROCA PARA CONVERGENCIA ##
-		/*
-			TODO: Usar o vetor de controle para verificar se ja estou ordenado com meu vizinho
-			senão, recebo a parcela de troca e faço a ordenação com a parcela e envio a sobra, que vai estar na minha parcela.
-			Neste caso, a ordenação é entrão realizada neste passo, então não precisamos faze-la no inicio do loop, somente a
-			primeira vez antes de entras no loop!!!
-		*/
-		
-		// se nao for Primeiro, envio meu menor valor pra Esquerda  O <- O
-		
-        if (my_rank != 0) 
+
+		//******************************
+		// #3. Converge
+		//******************************
+
+		// Send to left if im not the first process.
+		if (my_rank != 0) 
 		{
 			if(vet_ctrl[my_rank] == 0 ) //Verify with the vet_ctrl if i was ordenate with my left neighbor, if not send to exchange.
 			{
 				/* first, send my portion, and wait to recive from neightbor if im no the least process*/
 				MPI_Send(&vetor[0], pTochange, MPI_INT, left, LEFT, MPI_COMM_WORLD); // send to left
 				// Im not the last process, than i wait to recive from right with is send from left.
-				if(my_rank != proc_n -1){
+				if(my_rank != LAST){
 					// Wait for right to send
-					MPI_Recv(&vetor[psize+1], pTochange, MPI_INT, right, LEFT, MPI_COMM_WORLD, &status); 
+					MPI_Recv(&vetor[psize], pTochange, MPI_INT, right, LEFT, MPI_COMM_WORLD, &status); 
 					// Ordenate all vector, include the portion we recive
 					bs((psize+pTochange),vetor);
 					// Send back my portion
-					MPI_Send(&vetor[psize+1], pTochange, MPI_INT, left, LEFT, MPI_COMM_WORLD);
+					MPI_Send(&vetor[psize], pTochange, MPI_INT, right, RIGHT, MPI_COMM_WORLD);
+					MPI_Recv(&vetor[0], pTochange, MPI_INT, left, LEFT, MPI_COMM_WORLD, &status); 
+					bs((psize-1),vetor);
+				}
+				else
+				{
+					MPI_Recv(&vetor[0], pTochange, MPI_INT, left, RIGHT, MPI_COMM_WORLD, &status);
+					bs((psize),vetor);
+
 				}
 				
 			}
 		}
 		else
 		{
-
 			if(vet_ctrl[my_rank] == 0){
-				MPI_Recv(&vetor[psize+1], pTochange, MPI_INT, right, LEFT, MPI_COMM_WORLD, &status);
+				MPI_Recv(&vetor[psize-1], pTochange, MPI_INT, right, LEFT, MPI_COMM_WORLD, &status);
+				
 			}
-		}
-		
+		}		
 
-		/*if(my_rank < proc_n -1){
-			
-			// Recieve from left
-			if(vet_ctrl[right] == 0 ){
-				printf("%d Recebi\n",my_rank);
-				MPI_Recv(&vetor[psize+1], pTochange, MPI_INT, right, RIGHT, MPI_COMM_WORLD, &status); 
-				bs((psize+pTochange),vetor);
-				MPI_Send(&vetor[psize+1], pTochange, MPI_INT, left, LEFT, MPI_COMM_WORLD);
-			}
-		}*/
-		
-
-		//MPI_Send(&vetor[psize - pTochange], pTochange, MPI_INT, right, CHANGE, MPI_COMM_WORLD);
-		
-	}
-	// FINALIZA CODIGO
-
-	t2 = MPI_Wtime();
+	} // End While
 	
-	MPI_Barrier(MPI_COMM_WORLD); // Aguarda todos os processos chegarem ate aqui
+	// End time.
+	t2 = (my_rank == 0)?MPI_Wtime():0;
+	
 
+	#ifdef DEBUG
 	if (my_rank == 0)
 	{
 		printf("=======================================\n\n");
@@ -267,20 +255,17 @@ int main(int argc, char **argv)
 			printf("%d ", vet_ctrl[i]);
 		printf("\n\n");
 	}
+	#endif 
 
-	MPI_Barrier(MPI_COMM_WORLD); // Aguarda todos os processos chegarem ate aqui
-
+	#ifdef DEBUG
 	printf("[%d]Final: ", my_rank);
 	for (i = 0; i < 4; i++)
 		printf("%d ", vetor[i]);
 	printf("\n\n");
+	#endif
 
-	MPI_Barrier(MPI_COMM_WORLD); // Aguarda todos os processos chegarem ate aqui
-	
 	if (my_rank == 0)
 	{
-		printf("MPI ");
-		printf("Bubble ");
 		printf("Elapsed: %.4f s\n\n", t2 - t1);
 	}
 
