@@ -20,7 +20,7 @@
 #include <stdlib.h> //malloc atoi
 #include <string.h> //memcpy
 
-#define VET_SIZE  100 // Trabalho Final com o valores 100.000 e 1.000.000
+#define VET_SIZE  1000 // Trabalho Final com o valores 100.000 e 1.000.000
 
 #define DEBUG1 1
 #define LEFT 2
@@ -79,8 +79,7 @@ int main(int argc, char **argv)
 	
     int my_rank;           // Process ID
     int proc_n;            // Number of process
-	
-   
+	   
 	unsigned char end = 0;        // Control the main loop
 
     MPI_Init(&argc, &argv);
@@ -117,8 +116,7 @@ int main(int argc, char **argv)
 		vetor[i] = (proc_n - my_rank) * psize - i;
 	}
 	
-	// 1. First we ordenate our local vector at the first time.
-	bs(psize, vetor);
+	
 	#ifdef DEBUG1
 	printf("[%d]Vetor: ", my_rank);
 	for (i = 0; i < psize; i++)
@@ -129,9 +127,17 @@ int main(int argc, char **argv)
 	while(!end) {
     	
 		//******************************
-		//#1 Verifife order of elementes.
+		//#1. First we ordenate our vector
 		//******************************
 		
+		#ifdef DEBUG
+		printf("[%d]Vetor: ", my_rank);
+		for (i = 0; i < psize; i++)
+			printf("%d ", vetor[i]);
+		printf("\n\n");	
+		#endif 
+		MPI_Barrier(MPI_COMM_WORLD);
+		bs(psize, vetor);
 		// Send to the right, if im not the last process.
 		if (my_rank != LAST)
 		{
@@ -169,7 +175,6 @@ int main(int argc, char **argv)
 			}
 			else
 			{
-				printf("[%d] Vet[0] %d: Vet[%d] %d\n",my_rank,vetor[0],psize,vetor[psize]);
 				vet_ctrl[my_rank] = 0;
 			}
 		}
@@ -207,37 +212,29 @@ int main(int argc, char **argv)
 		// Send to left if im not the first process.
 		if (my_rank != 0) 
 		{
+			/* first, send my portion, and wait to recive from neightbor if im no the least process*/
+				MPI_Send(&vetor[0], pTochange, MPI_INT, left, TAG, MPI_COMM_WORLD); // send to left
+		}		
+	
+		if (my_rank != proc_n - 1){
 			if(vet_ctrl[my_rank] == 0 ) //Verify with the vet_ctrl if i was ordenate with my left neighbor, if not send to exchange.
 			{
-				/* first, send my portion, and wait to recive from neightbor if im no the least process*/
-				MPI_Send(&vetor[0], pTochange, MPI_INT, left, LEFT, MPI_COMM_WORLD); // send to left
 				// Im not the last process, than i wait to recive from right with is send from left.
-				if(my_rank != LAST){
-					// Wait for right to send
-					MPI_Recv(&vetor[psize], pTochange, MPI_INT, right, LEFT, MPI_COMM_WORLD, &status); 
-					// Ordenate all vector, include the portion we recive
-					bs((psize+pTochange),vetor);
-					// Send back my portion
-					MPI_Send(&vetor[psize], pTochange, MPI_INT, right, RIGHT, MPI_COMM_WORLD);
-					MPI_Recv(&vetor[0], pTochange, MPI_INT, left, LEFT, MPI_COMM_WORLD, &status); 
-					bs((psize-1),vetor);
-				}
-				else
+				// Wait for right to send
+				MPI_Recv(&vetor[psize], pTochange, MPI_INT, right, TAG, MPI_COMM_WORLD, &status); 
+				// Ordenate all vector, include the portion we recive
+				bs(psize+pTochange,vetor);
+				// Send back my portion
+				MPI_Send(&vetor[psize], pTochange, MPI_INT, right, TAG, MPI_COMM_WORLD);
+				if (my_rank != 0)
 				{
-					MPI_Recv(&vetor[0], pTochange, MPI_INT, left, RIGHT, MPI_COMM_WORLD, &status);
-					bs((psize),vetor);
-
+					MPI_Recv(&vetor[psize], pTochange, MPI_INT, left, TAG, MPI_COMM_WORLD, &status); 
+					bs(psize+pTochange,vetor);
 				}
-				
+						
 			}
 		}
-		else
-		{
-			if(vet_ctrl[my_rank] == 0){
-				MPI_Recv(&vetor[psize-1], pTochange, MPI_INT, right, LEFT, MPI_COMM_WORLD, &status);
-				
-			}
-		}		
+		
 
 	} // End While
 	
