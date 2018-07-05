@@ -22,7 +22,7 @@
 
 #define VET_SIZE  1000 // Trabalho Final com o valores 100.000 e 1.000.000
 
-//#define DEBUG 1
+#define DEBUG1 1
 #define LEFT 2
 #define RIGHT 3
 #define TAG 4
@@ -88,13 +88,16 @@ int main(int argc, char **argv)
     MPI_Comm_size(MPI_COMM_WORLD, &proc_n);
 
     t1 = MPI_Wtime();
-	
-    int i;					// for counters
+
+	#define LAST (proc_n - 1)		// Last process
+    int i;							// for counters
 	
 	unsigned char k;				// contador de processos
     int psize = VET_SIZE/proc_n;	// tamanho do vetor do processo
 	int pTochange = psize/25;		// Size to change date with others
 	int left ,right;				// Auxiliar vector for change operation
+	
+	
 	
 	/* If rank !=0 or < proc_n, two space are availaible to set flag control. This is 
 	 used for know, if im ordenated with my left and right neighbor. Use (my_rank+(my_rank - 1))
@@ -102,62 +105,57 @@ int main(int argc, char **argv)
 	//int aux[pTochange];				
 	
 	left = (my_rank !=0) ? my_rank -1:0 ;
-	right = (my_rank < proc_n - 1) ? my_rank + 1: proc_n - 1;
+	right = (my_rank < LAST) ? my_rank + 1: LAST;
 	unsigned char vet_ctrl[(proc_n * 2)-2]; // Control vector 
 	
-    int *vetor = (int *)malloc( (psize + pTochange) * sizeof(int)); // Data vector with extra size
+    //int *vetor = (int *)malloc( (psize + pTochange) * sizeof(int)); // Data vector with extra size
+	int vetor[psize + pTochange];
 	
 	memset(vet_ctrl, 0, sizeof(vet_ctrl));
     for (i = 0; i < psize; i++)
 	{
 		vetor[i] = (proc_n - my_rank) * psize - i;
 	}
-	#ifdef DEBUG
-		printf("[%d]Vetor Inicial: ", my_rank);
+	
+	// 1. First we ordenate our local vector at the first time.
+	bs(psize, vetor);
+	#ifdef DEBUG1
+	printf("[%d]Vetor: ", my_rank);
 	for (i = 0; i < psize; i++)
 		printf("%d ", vetor[i]);
 	printf("\n\n");	
 	#endif 
-	
-	// 1. First we ordenate our local vector at the first time.
-	bs(psize, vetor);
-	
+
 	while(!end) {
-    
-		#ifdef DEBUG
-		printf("[%d]Vetor: ", my_rank);
-		for (i = 0; i < psize; i++)
-			printf("%d ", vetor[i]);
-		printf("\n\n");
-		#endif
-	
+    	
 		// se nao for Ultimo, envio maior valor pra Direita   O -> O
-		if (my_rank != proc_n - 1)
+		if (my_rank != LAST)
 		{
-			MPI_Send(&vetor[psize], 1, MPI_INT, right, TAG, MPI_COMM_WORLD);		
+			MPI_Send(&vetor[psize-1], 1, MPI_INT, right, RIGHT, MPI_COMM_WORLD);		
 		}
 		if (my_rank == 1)
 		{
-			MPI_Send(&vetor[0], 1, MPI_INT, left, TAG, MPI_COMM_WORLD);
+			MPI_Send(&vetor[0], 1, MPI_INT, left, LEFT, MPI_COMM_WORLD);
 		}
 		// se nao for Primeiro, recebo maior valor da Esquerda
 		if (my_rank != 0)
 		{
-			MPI_Recv(&vetor[psize+1], 1, MPI_INT, left, TAG, MPI_COMM_WORLD, &status);
+			MPI_Recv(&vetor[psize], 1, MPI_INT, left, RIGHT, MPI_COMM_WORLD, &status);
 			// se o Maior recebido, for menor que meu Menor, OK
-			if (vetor[0] < vetor[psize+1])
+			if (vetor[0]  < vetor[psize])
 			{
 				vet_ctrl[my_rank] = 1;
 			}
 			else
 			{
+				printf("[%d] Vet[0] %d: Vet[%d] %d\n",my_rank,vetor[0],psize,vetor[psize]);
 				vet_ctrl[my_rank] = 0;
 			}
 		}
-		else
+		if (my_rank == 0)
 		{
-			MPI_Recv(&vetor[psize+1], 1, MPI_INT, right, TAG, MPI_COMM_WORLD, &status);	
-			if (vetor[psize] > vetor[psize+1])
+			MPI_Recv(&vetor[psize], 1, MPI_INT, 1, LEFT, MPI_COMM_WORLD, &status);	
+			if (vetor[psize-1] > vetor[psize])
 			{
 				vet_ctrl[my_rank] = 1;
 			}
@@ -166,6 +164,8 @@ int main(int argc, char **argv)
 				vet_ctrl[my_rank] = 0;
 			}
 		}
+
+
 		
 		// BROADCAST
 		for (i = 0; i < proc_n; i++)
@@ -215,7 +215,6 @@ int main(int argc, char **argv)
 			if(vet_ctrl[my_rank] == 0 ) //Verify with the vet_ctrl if i was ordenate with my left neighbor, if not send to exchange.
 			{
 				/* first, send my portion, and wait to recive from neightbor if im no the least process*/
-
 				MPI_Send(&vetor[0], pTochange, MPI_INT, left, LEFT, MPI_COMM_WORLD); // send to left
 				// Im not the last process, than i wait to recive from right with is send from left.
 				if(my_rank != proc_n -1){
@@ -231,7 +230,10 @@ int main(int argc, char **argv)
 		}
 		else
 		{
-			MPI_Recv(&vetor[psize+1], pTochange, MPI_INT, right, LEFT, MPI_COMM_WORLD, &status);
+
+			if(vet_ctrl[my_rank] == 0){
+				MPI_Recv(&vetor[psize+1], pTochange, MPI_INT, right, LEFT, MPI_COMM_WORLD, &status);
+			}
 		}
 		
 
@@ -246,7 +248,6 @@ int main(int argc, char **argv)
 			}
 		}*/
 		
-		printf("fim loop\n");
 
 		//MPI_Send(&vetor[psize - pTochange], pTochange, MPI_INT, right, CHANGE, MPI_COMM_WORLD);
 		
